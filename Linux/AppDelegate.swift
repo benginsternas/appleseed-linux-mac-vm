@@ -87,29 +87,45 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
 
     /// Configures the paravirtualized primary block device.
     ///
-    /// Explicitly configures disk caching and synchronization to maximize performance on macOS hosts.
+    /// Explicitly configures disk caching and synchronization. Uses standard, ultra-safe caching
+    /// during installation to prevent block allocation delays or driver timeouts, and high-performance settings post-install.
     /// - Returns: A configured `VZVirtioBlockDeviceConfiguration` instance.
     private func createBlockDeviceConfiguration() -> VZVirtioBlockDeviceConfiguration {
-        // Configures VZDiskImageStorageDeviceAttachment using:
-        // - cachingMode: .cached (enables macOS host-level file caching of virtual disk pages)
-        // - synchronizationMode: .fsync (leverages macOS's best-effort background disk synchronization instead of slow full flushes)
-        // This dramatically accelerates random read/write disk I/O in the guest VM.
-        guard let mainDiskAttachment = try? VZDiskImageStorageDeviceAttachment(
-            url: URL(fileURLWithPath: mainDiskImagePath),
-            readOnly: false,
-            cachingMode: .cached,
-            synchronizationMode: .fsync
-        ) else {
-            fatalError("Failed to create main disk storage device attachment.")
+        let mainDiskAttachment: VZDiskImageStorageDeviceAttachment
+        if needsInstall {
+            // Standard, ultra-safe caching and synchronization to prevent APFS block allocation delays or driver timeouts.
+            guard let attachment = try? VZDiskImageStorageDeviceAttachment(
+                url: URL(fileURLWithPath: mainDiskImagePath),
+                readOnly: false
+            ) else {
+                fatalError("Failed to create safe installer disk attachment.")
+            }
+            mainDiskAttachment = attachment
+        } else {
+            // High-performance cachingMode: .cached and synchronizationMode: .fsync for maximum paravirtualized I/O.
+            guard let attachment = try? VZDiskImageStorageDeviceAttachment(
+                url: URL(fileURLWithPath: mainDiskImagePath),
+                readOnly: false,
+                cachingMode: .cached,
+                synchronizationMode: .fsync
+            ) else {
+                fatalError("Failed to create high-performance disk attachment.")
+            }
+            mainDiskAttachment = attachment
         }
 
         let mainDisk = VZVirtioBlockDeviceConfiguration(attachment: mainDiskAttachment)
         return mainDisk
     }
 
-    /// Dynamically computes an optimal CPU count for the guest VM based on the host.
+    /// Computes an optimal CPU count for the guest VM.
     /// - Returns: A sensible number of CPU cores to allocate.
     private func computeCPUCount() -> Int {
+        if needsInstall {
+            // Allocate a stable 2 cores during the installation phase for maximum installer compatibility.
+            return 2
+        }
+
         let totalAvailableCPUs = ProcessInfo.processInfo.processorCount
 
         // For systems with 4 or more cores, allocate total cores minus 2.
@@ -124,9 +140,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
         return virtualCPUCount
     }
 
-    /// Dynamically computes an optimal RAM allocation for the guest VM based on the host.
+    /// Computes an optimal RAM allocation for the guest VM.
     /// - Returns: Memory size in bytes.
     private func computeMemorySize() -> UInt64 {
+        if needsInstall {
+            // Allocate a stable 4 GiB memory limit during installation for absolute safety.
+            return 4 * 1024 * 1024 * 1024
+        }
+
         // Dynamically request 50% of the host's total physical memory (RAM).
         let hostMemory = ProcessInfo.processInfo.physicalMemory
         var memorySize = hostMemory / 2
@@ -330,7 +351,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
         virtualMachineConfiguration.keyboards = [VZUSBKeyboardConfiguration()]
         virtualMachineConfiguration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
         virtualMachineConfiguration.consoleDevices = [createSpiceAgentConsoleDeviceConfiguration()]
-        virtualMachineConfiguration.directorySharingDevices = [createDirectorySharingConfiguration()]
+        if needsInstall {
+            // Directory sharing devices are omitted during the installation phase to prevent driver conflicts.
+            virtualMachineConfiguration.directorySharingDevices = []
+        } else {
+            virtualMachineConfiguration.directorySharingDevices = [createDirectorySharingConfiguration()]
+        }
 
         // Perform configuration validation check before booting
         try! virtualMachineConfiguration.validate()
