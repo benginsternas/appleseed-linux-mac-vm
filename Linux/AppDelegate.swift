@@ -23,9 +23,6 @@ let efiVariableStorePath = vmBundlePath + "NVRAM"
 /// The absolute path of the machine identifier for persistence.
 let machineIdentifierPath = vmBundlePath + "MachineIdentifier"
 
-/// The absolute path of the host shared folder exposed via VirtioFS.
-let sharedDirectoryPath = vmBundlePath + "Shared"
-
 @main
 class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
 
@@ -76,8 +73,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
         }
 
         do {
-            // Pre-allocate a 128 GB sparse disk image for the guest OS.
-            try mainDiskFileHandle.truncate(atOffset: 128 * 1024 * 1024 * 1024)
+            // Pre-allocate a 64 GB sparse disk image for the guest OS.
+            try mainDiskFileHandle.truncate(atOffset: 64 * 1024 * 1024 * 1024)
         } catch {
             fatalError("Failed to pre-allocate/truncate the main disk image space.")
         }
@@ -86,83 +83,49 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
     // MARK: - Virtual Device Configurations
 
     /// Configures the paravirtualized primary block device.
-    ///
-    /// Explicitly configures disk caching and synchronization. Uses standard, ultra-safe caching
-    /// during installation to prevent block allocation delays or driver timeouts, and high-performance settings post-install.
     /// - Returns: A configured `VZVirtioBlockDeviceConfiguration` instance.
     private func createBlockDeviceConfiguration() -> VZVirtioBlockDeviceConfiguration {
-        let mainDiskAttachment: VZDiskImageStorageDeviceAttachment
-        if needsInstall {
-            // Standard, ultra-safe caching and synchronization to prevent APFS block allocation delays or driver timeouts.
-            guard let attachment = try? VZDiskImageStorageDeviceAttachment(
-                url: URL(fileURLWithPath: mainDiskImagePath),
-                readOnly: false
-            ) else {
-                fatalError("Failed to create safe installer disk attachment.")
-            }
-            mainDiskAttachment = attachment
-        } else {
-            // High-performance cachingMode: .cached and synchronizationMode: .fsync for maximum paravirtualized I/O.
-            guard let attachment = try? VZDiskImageStorageDeviceAttachment(
-                url: URL(fileURLWithPath: mainDiskImagePath),
-                readOnly: false,
-                cachingMode: .cached,
-                synchronizationMode: .fsync
-            ) else {
-                fatalError("Failed to create high-performance disk attachment.")
-            }
-            mainDiskAttachment = attachment
+        guard let mainDiskAttachment = try? VZDiskImageStorageDeviceAttachment(url: URL(fileURLWithPath: mainDiskImagePath), readOnly: false) else {
+            fatalError("Failed to create main disk storage device attachment.")
         }
 
         let mainDisk = VZVirtioBlockDeviceConfiguration(attachment: mainDiskAttachment)
         return mainDisk
     }
 
-    /// Computes an optimal CPU count for the guest VM.
-    /// - Returns: A sensible number of CPU cores to allocate.
+    /// Computes the CPU count for the guest VM based on physical performance cores.
+    ///
+    /// Dynamically queries physical performance cores (P-Cores) on Apple Silicon to ensure threads execute exclusively
+    /// on high-speed hardware blocks, avoiding context switching overhead with efficiency (E) cores.
+    /// - Returns: The number of CPU cores to allocate.
     private func computeCPUCount() -> Int {
-        if needsInstall {
-            // Allocate a stable 2 cores during the installation phase for maximum installer compatibility.
-            return 2
+        var performanceCores: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        let result = sysctlbyname("hw.perflevel0.physicalcpu", &performanceCores, &size, nil, 0)
+
+        var virtualCPUCount: Int
+        if result == 0 && performanceCores > 0 {
+            // Allocate exactly the number of physical performance cores to bypass E-cores.
+            virtualCPUCount = Int(performanceCores)
+        } else {
+            // Fallback for Intel or systems where sysctl fails.
+            let totalAvailableCPUs = ProcessInfo.processInfo.processorCount
+            virtualCPUCount = totalAvailableCPUs <= 1 ? 1 : totalAvailableCPUs - 1
         }
 
-        let totalAvailableCPUs = ProcessInfo.processInfo.processorCount
-
-        // For systems with 4 or more cores, allocate total cores minus 2.
-        // This guarantees that the macOS host has at least 2 cores left for system tasks, maintaining host snappy responsiveness.
-        var virtualCPUCount = totalAvailableCPUs >= 4 ? totalAvailableCPUs - 2 : totalAvailableCPUs - 1
-        
-        // Ensure values stay within Apple Virtualization framework limits
-        virtualCPUCount = max(virtualCPUCount, 1)
         virtualCPUCount = max(virtualCPUCount, VZVirtualMachineConfiguration.minimumAllowedCPUCount)
         virtualCPUCount = min(virtualCPUCount, VZVirtualMachineConfiguration.maximumAllowedCPUCount)
 
         return virtualCPUCount
     }
 
-    /// Computes an optimal RAM allocation for the guest VM.
+    /// Computes the RAM allocation for the guest VM.
+    ///
+    /// Allocates a stable, standard 4 GiB RAM configuration to prevent host-side memory pressure
+    /// and page-swapping delays on the host SSD.
     /// - Returns: Memory size in bytes.
     private func computeMemorySize() -> UInt64 {
-        if needsInstall {
-            // Allocate a stable 4 GiB memory limit during installation for absolute safety.
-            return 4 * 1024 * 1024 * 1024
-        }
-
-        // Dynamically request 50% of the host's total physical memory (RAM).
-        let hostMemory = ProcessInfo.processInfo.physicalMemory
-        var memorySize = hostMemory / 2
-        
-        // Clamp to a safe, premium range (minimum 4 GiB to run GUI Linux comfortably; maximum 16 GiB to leave plenty for host apps).
-        let minMemory: UInt64 = 4 * 1024 * 1024 * 1024 // 4 GiB
-        let maxMemory: UInt64 = 16 * 1024 * 1024 * 1024 // 16 GiB
-        
-        if memorySize < minMemory {
-            memorySize = minMemory
-        } else if memorySize > maxMemory {
-            memorySize = maxMemory
-        }
-
-        // Clamp memory size within Apple Virtualization framework constraints
+        var memorySize = (4 * 1024 * 1024 * 1024) as UInt64 // 4 GiB
         memorySize = max(memorySize, VZVirtualMachineConfiguration.minimumAllowedMemorySize)
         memorySize = min(memorySize, VZVirtualMachineConfiguration.maximumAllowedMemorySize)
 
@@ -175,7 +138,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
         let machineIdentifier = VZGenericMachineIdentifier()
 
         // Store the machine identifier to disk so it can be restored on subsequent boots.
-        // This is critical for guest OSes that expect stable hardware UUIDs.
         try! machineIdentifier.dataRepresentation.write(to: URL(fileURLWithPath: machineIdentifierPath))
         return machineIdentifier
     }
@@ -237,11 +199,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
     /// - Returns: A configured `VZVirtioGraphicsDeviceConfiguration`.
     private func createGraphicsDeviceConfiguration() -> VZVirtioGraphicsDeviceConfiguration {
         let graphicsDevice = VZVirtioGraphicsDeviceConfiguration()
-        // Sets a starting display resolution of 1512x982.
-        // This perfectly matches the 14" MacBook Pro Liquid Retina XDR native aspect ratio (3024x1964) at exactly half scale.
-        // It provides a beautifully crisp starting window size without occupying the full screen.
         graphicsDevice.scanouts = [
-            VZVirtioGraphicsScanoutConfiguration(widthInPixels: 1512, heightInPixels: 982)
+            VZVirtioGraphicsScanoutConfiguration(widthInPixels: 1280, heightInPixels: 720)
         ]
 
         return graphicsDevice
@@ -281,31 +240,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
         return consoleDevice
     }
 
-    /// Verifies the presence of the Mac host 'Shared' directory and creates it if missing.
-    private func createSharedDirectoryIfNeeded() {
-        if !FileManager.default.fileExists(atPath: sharedDirectoryPath) {
-            do {
-                try FileManager.default.createDirectory(atPath: sharedDirectoryPath, withIntermediateDirectories: true)
-            } catch {
-                print("Failed to create Shared directory on host: \(error.localizedDescription)")
-            }
-        }
-    }
-
-    /// Configures VirtioFS directory sharing to share folders between macOS host and guest VM.
-    /// - Returns: A configured `VZVirtioFileSystemDeviceConfiguration` instance mapping the 'Shared' folder.
-    private func createDirectorySharingConfiguration() -> VZVirtioFileSystemDeviceConfiguration {
-        createSharedDirectoryIfNeeded()
-
-        let sharedDirectoryURL = URL(fileURLWithPath: sharedDirectoryPath)
-        let sharedDirectory = VZSharedDirectory(url: sharedDirectoryURL, readOnly: false)
-        let singleDirectoryShare = VZSingleDirectoryShare(directory: sharedDirectory)
-
-        // Tag "shared" will be used to mount the folder inside Linux guest (e.g. `mount -t virtiofs shared /mnt/shared`)
-        let fileSystemDevice = VZVirtioFileSystemDeviceConfiguration(tag: "shared")
-        fileSystemDevice.share = singleDirectoryShare
-
-        return fileSystemDevice
+    /// Configures a Virtio entropy device to provide a hardware source of randomness to the guest OS.
+    /// This prevents entropy starvation, which causes severe delays (often ~1 minute) when launching applications.
+    /// - Returns: A configured `VZVirtioEntropyDeviceConfiguration`.
+    private func createEntropyDeviceConfiguration() -> VZVirtioEntropyDeviceConfiguration {
+        return VZVirtioEntropyDeviceConfiguration()
     }
 
     // MARK: - VM Creation and Lifecycle Management
@@ -314,7 +253,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
     func createVirtualMachine() {
         let virtualMachineConfiguration = VZVirtualMachineConfiguration()
 
-        // Apply resource configurations
         virtualMachineConfiguration.cpuCount = computeCPUCount()
         virtualMachineConfiguration.memorySize = computeMemorySize()
 
@@ -343,20 +281,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
         }
         virtualMachineConfiguration.storageDevices = disks
 
-        // Attach communication, display, input, sound, and filesystem sharing devices
+        // Attach communication, display, input, sound, and input devices
         virtualMachineConfiguration.networkDevices = [createNetworkDeviceConfiguration()]
         virtualMachineConfiguration.graphicsDevices = [createGraphicsDeviceConfiguration()]
         virtualMachineConfiguration.audioDevices = [createInputAudioDeviceConfiguration(), createOutputAudioDeviceConfiguration()]
+        virtualMachineConfiguration.entropyDevices = [createEntropyDeviceConfiguration()]
 
         virtualMachineConfiguration.keyboards = [VZUSBKeyboardConfiguration()]
         virtualMachineConfiguration.pointingDevices = [VZUSBScreenCoordinatePointingDeviceConfiguration()]
         virtualMachineConfiguration.consoleDevices = [createSpiceAgentConsoleDeviceConfiguration()]
-        if needsInstall {
-            // Directory sharing devices are omitted during the installation phase to prevent driver conflicts.
-            virtualMachineConfiguration.directorySharingDevices = []
-        } else {
-            virtualMachineConfiguration.directorySharingDevices = [createDirectorySharingConfiguration()]
-        }
 
         // Perform configuration validation check before booting
         try! virtualMachineConfiguration.validate()
@@ -445,6 +378,24 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
         return true
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // If the virtual machine is running, initiate a graceful ACPI shutdown.
+        if virtualMachine != nil && virtualMachine.state == .running {
+            if virtualMachine.canRequestStop {
+                do {
+                    try virtualMachine.requestStop()
+                    print("Sent graceful shutdown request to the guest OS.")
+                    // Postpone termination until the guest OS completes its shutdown sequence.
+                    // The delegate method guestDidStop(_:) will handle the final exit.
+                    return .terminateLater
+                } catch {
+                    print("Failed to request graceful stop: \(error.localizedDescription)")
+                }
+            }
+        }
+        return .terminateNow
+    }
+
     // MARK: - VZVirtualMachineDelegate Methods
 
     func virtualMachine(_ virtualMachine: VZVirtualMachine, didStopWithError error: Error) {
@@ -454,6 +405,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, VZVirtualMachineDelegate {
 
     func guestDidStop(_ virtualMachine: VZVirtualMachine) {
         print("Guest OS gracefully shut down the virtual machine.")
+        NSApp.reply(toApplicationShouldTerminate: true)
         exit(0)
     }
 
