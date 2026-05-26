@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		03A7911D2FC510A9006F580A /* Virtualization.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 03A7911C2FC510A9006F580A /* Virtualization.framework */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		03A7910A2FC50904006F580A /* Linux.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Linux.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		03A7911C2FC510A9006F580A /* Virtualization.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Virtualization.framework; path = System/Library/Frameworks/Virtualization.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -23,6 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				03A7911D2FC510A9006F580A /* Virtualization.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -33,6 +39,7 @@
 			isa = PBXGroup;
 			children = (
 				03A7910C2FC50904006F580A /* Linux */,
+				03A7911B2FC510A9006F580A /* Frameworks */,
 				03A7910B2FC50904006F580A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -43,6 +50,14 @@
 				03A7910A2FC50904006F580A /* Linux.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		03A7911B2FC510A9006F580A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				03A7911C2FC510A9006F580A /* Virtualization.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -248,11 +263,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				DEVELOPMENT_TEAM = N5YVYBR955;
+				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
@@ -262,6 +278,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				CODE_SIGN_ENTITLEMENTS = Linux/Linux.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.benginsternas.Linux;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -279,11 +296,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				DEVELOPMENT_TEAM = N5YVYBR955;
+				ENABLE_APP_SANDBOX = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				INFOPLIST_KEY_NSMainStoryboardFile = Main;
@@ -293,6 +311,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
+				CODE_SIGN_ENTITLEMENTS = Linux/Linux.entitlements;
 				PRODUCT_BUNDLE_IDENTIFIER = com.benginsternas.Linux;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

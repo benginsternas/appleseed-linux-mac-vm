@@ -1,0 +1,29 @@
+# Xcode
+#
+# Reference: https://github.com/github/gitignore/blob/main/Swift.gitignore
+
+# Xcode User settings and state
+xcuserdata/
+*.xcuserdatad
+*.xcuserstate
+
+# Build artifacts
+build/
+DerivedData/
+*.moved-aside
+
+# macOS System Files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Files that might appear on external disks / network shares
+.Spotlight-V100
+.Trashes
+
+# Xcode Workspace settings (user-specific)
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
