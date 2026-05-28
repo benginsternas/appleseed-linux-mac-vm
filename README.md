@@ -1,6 +1,6 @@
 # Appleseed Linux
 
-A native, lightweight, and paravirtualized macOS application developed by **Bengin Sternas** that runs high-performance GUI Linux virtual machines on Apple Silicon Macs using Apple's native **Virtualization** framework (`VZVirtualMachine`). 
+A native, lightweight, paravirtualized macOS application for running high-performance GUI Linux virtual machines on Apple Silicon Macs using **Apple's native Virtualization** framework (VZVirtualMachine).
 
 Highly optimized for peak stability, scheduling efficiency, and a robust, crash-free launch experience.
 
